@@ -37,9 +37,9 @@ compiler() {
     for (( i = start; i <= end && i <= list; i++ )); do
         getName ${i} >> "$tmpList"
     done
-
+    local objFile
     while IFS= read -r src; do
-        local objFile="build/obj/$(basename "${src%.*}").o"
+        objFile="build/obj/$(basename "${src%.*}").o"
         echo "g++ -c \"$src\" -o \"$objFile\""
         if ! g++ -c "$src" -o "$objFile"; then
             echo -e "\e[31m✗ Error compiling: $src\e[0m" >&2
@@ -80,10 +80,10 @@ reBlockBuild() {
         echo "No UPD."
         return
     fi
-
+    local str index
     for (( i = 1; i <= countNew; i++ )); do
-        local str=$(sed -n "${i}p" build/newFiles.txt)
-        local index=$(getIndex "$str")
+        str=$(sed -n "${i}p" build/newFiles.txt)
+        index=$(getIndex "$str")
         if (( index != 0 )); then
             local numBlock=$(( (index + 2) / 3 ))
             compiler ${numBlock} ${list}
@@ -105,9 +105,8 @@ g() {
     elif [ -f "build/main" ]; then
         mv build/main build/temp/prev 2>/dev/null
     fi
-
-    echo "g++ -o build/main $libs"
-    if g++ -o build/main $libs; then
+    echo "g++ -o build/main -Wl,--start-group $libs -Wl,--end-group"
+    if g++ -o build/main  -Wl,--start-group $libs -Wl,--end-group; then
         echo -e "\e[32m✔ Done!\e[0m"
         ./build/main
     else
