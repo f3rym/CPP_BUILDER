@@ -14,7 +14,7 @@ getIndex() {
         if [[ "$line_name" == "$search_name" ]]; then
             echo "$line_num"
             return 0
-        fi
+        fi          
     done < build/listCPP.txt
 
     echo "0"
@@ -28,35 +28,52 @@ compiler() {
     local list=$2
     local start=$(( (numBlock - 1) * 3 + 1 ))
     local end=$(( numBlock * 3 ))
-
-    echo -e "\ncompiling n ${numBlock}"
+    echo -e "\n\e[34m➤ Compiling block ${numBlock} (files ${start} to ${end})...\e[0m"
 
     local tmpList="build/tmp_block_${numBlock}.txt"
     : > "$tmpList"
-
     for (( i = start; i <= end && i <= list; i++ )); do
         getName ${i} >> "$tmpList"
     done
+
+    local objs=""
     local objFile
+    local success=1
+
     while IFS= read -r src; do
         objFile="build/obj/$(basename "${src%.*}").o"
-        echo "g++ -c \"$src\" -o \"$objFile\""
-        if ! g++ -c "$src" -o "$objFile"; then
-            echo -e "\e[31m✗ Error compiling: $src\e[0m" >&2
-            return 1
+        if [[ ! -f "$objFile" || "$src" -nt "$objFile" ]]; then
+            echo "g++ -c \"$src\" -o \"$objFile\""
+            if ! g++ -c "$src" -o "$objFile"; then
+                echo -e "\e[31m✗ Error compiling: $src\e[0m" >&2
+                success=0
+            fi
+        else
+            echo "✔ $objFile is up-to-date"
         fi
+        objs+=" $objFile"
     done < "$tmpList"
 
-    local objs
-    objs=$(while IFS= read -r src; do echo "build/obj/$(basename "${src%.*}").o"; done < "$tmpList")
-    local arFile="build/binary/block${numBlock}.a"
-    echo "ar rcs $arFile $objs"
-    if ! ar rcs "$arFile" $objs; then
-        echo -e "\e[31m✗ Error with create file $arFile\e[0m" >&2
+    if (( success == 0 )); then
+        rm "$tmpList"
         return 1
     fi
 
-    echo -e "\e[32m✔ Block ${numBlock} -> ${arFile} create done\e[0m"
+    local arFile="build/binary/block${numBlock}.a"
+    echo "ar rcs $arFile $objs"
+    if ! ar rcs "$arFile" $objs; then
+        echo -e "\e[31m✗ Error creating archive $arFile\e[0m" >&2
+        rm "$tmpList"
+        return 1
+    fi
+
+    if [[ ! -s "$arFile" ]]; then
+        echo -e "\e[31m✗ Archive $arFile is empty\e[0m" >&2
+        rm "$tmpList"
+        return 1
+    fi
+
+    echo -e "\e[32m✔ Block ${numBlock} -> ${arFile} created\e[0m"
     rm "$tmpList"
 }
 
@@ -66,28 +83,26 @@ blockBuild() {
     countBlock=$(( (list + 2) / 3 ))
 
     for (( numBlock = 1; numBlock <= countBlock; numBlock++ )); do
-        compiler ${numBlock} ${list}
+        compiler ${numBlock} ${list} || return 1
     done
 }
 
 reBlockBuild() {
-    local countNew list
-    find . \( -name "*.cpp" -o -name "*.h" \) -newer build/main > build/newFiles.txt 2>/dev/null
-    countNew=$(wc -l < build/newFiles.txt)
+    local list countBlock
     list=$(wc -l < build/listCPP.txt)
+    countBlock=$(( (list + 2) / 3 ))
 
-    if (( countNew == 0 )); then
-        echo "No UPD."
-        return
-    fi
-    local str index
-    for (( i = 1; i <= countNew; i++ )); do
-        str=$(sed -n "${i}p" build/newFiles.txt)
-        index=$(getIndex "$str")
-        if (( index != 0 )); then
-            local numBlock=$(( (index + 2) / 3 ))
-            compiler ${numBlock} ${list}
-        fi
+    for (( numBlock = 1; numBlock <= countBlock; numBlock++ )); do
+        local rebuild=0
+        for (( i = (numBlock-1)*3+1; i <= numBlock*3 && i <= list; i++ )); do
+            src=$(getName "$i")
+            objFile="build/obj/$(basename "${src%.*}").o"
+            if [[ ! -f "$objFile" || "$src" -nt "$objFile" ]]; then
+                rebuild=1
+                break
+            fi
+        done
+        (( rebuild )) && compiler "$numBlock" "$list" || echo "Block $numBlock is up-to-date"
     done
 }
 
@@ -100,23 +115,19 @@ g() {
         return 1
     fi
 
-    if [ -f "build/temp/prev" ]; then
-        rm build/temp/prev
-    elif [ -f "build/main" ]; then
-        mv build/main build/temp/prev 2>/dev/null
-    fi
+    mkdir -p build/temp
+    [[ -f "build/main" ]] && mv build/main build/temp/prev 2>/dev/null
+
     echo "g++ -o build/main -Wl,--start-group $libs -Wl,--end-group"
-    if g++ -o build/main  -Wl,--start-group $libs -Wl,--end-group; then
+    if g++ -o build/main -Wl,--start-group $libs -Wl,--end-group; then
         echo -e "\e[32m✔ Done!\e[0m"
         ./build/main
     else
-        echo -e "\e[31m✗ Error link!\e[0m"
-        if [ -f "build/temp/prev" ]; then
-            cp build/temp/prev build/main
-            echo -e "\e[33mPrev version restored\e[0m"
-            ./build/main
-        fi
+        echo -e "\e[31m✗ Link error!\e[0m"
+        [[ -f "build/temp/prev" ]] && cp build/temp/prev build/main && echo -e "\e[33mPrev version restored\e[0m" && ./build/main
+        return 1
     fi
+    rm -rf build/temp
 }
 
 release() {
@@ -124,7 +135,6 @@ release() {
 
     [[ -f "build/listCPP.txt" ]] && mv build/listCPP.txt build/prev/listCPP.txt 2>/dev/null
     [[ -f "build/listH.txt" ]] && mv build/listH.txt build/prev/listH.txt 2>/dev/null
-
     find . -name "*.cpp" > build/listCPP.txt
     find . -name "*.h" > build/listH.txt
 
@@ -137,17 +147,20 @@ release() {
 }
 
 release || exit 1
-echo "Checking neeeed compilation..."
+echo "Checking if compilation is needed..."
 
 if [ ! -f "build/main" ]; then
     echo "First compilation..."
-    blockBuild
-    g
-elif [[ -n "$(find . -name "*.cpp" -newer build/main -o -name "*.h" -newer build/main 2>/dev/null)" ]]; then
-    echo "UPD, compiling..."
-    reBlockBuild
-    g
+    blockBuild || exit 1
+    g || exit 1
 else
-    echo "Compiling is not required"
-    ./build/main
+    updatedFiles=$(find . -name "*.cpp" -o -name "*.h" -newer build/main 2>/dev/null)
+    if [[ -n "$updatedFiles" ]]; then
+        echo "Changes detected, compiling..."
+        reBlockBuild || exit 1
+        g || exit 1
+    else
+        echo "Compiling is not required"
+        ./build/main
+    fi
 fi
