@@ -111,6 +111,15 @@ reBlockBuild() {
         fi
     done
 }
+printCodeExec(){
+    local error=$?
+    echo ""
+    if ((error == 0)); then
+        echo -e "\e[32m✔ Return code ... ${error}\e[0m"
+    else 
+        echo -e "\e[31m✗ Return code ... ${error}\e[0m"
+    fi
+}
 
 g() {
     local libs
@@ -128,6 +137,7 @@ g() {
     if g++ -o build/main -Wl,--start-group $libs -Wl,--end-group; then
         echo -e "\e[32m✔ Done!\e[0m"
         ./build/main
+        printCodeExec
     else
         echo -e "\e[31m✗ Link error!\e[0m"
         [[ -f "build/temp/prev" ]] && cp build/temp/prev build/main && echo -e "\e[33mPrev version restored\e[0m" && ./build/main
@@ -167,5 +177,6 @@ else
     else
         echo "Compiling is not required"
         ./build/main
+        printCodeExec
     fi
 fi
