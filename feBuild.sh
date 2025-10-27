@@ -83,7 +83,7 @@ blockBuild() {
     countBlock=$(( (list + 2) / 3 ))
 
     for (( numBlock = 1; numBlock <= countBlock; numBlock++ )); do
-        compiler ${numBlock} ${list} || return 1
+        compiler "${numBlock}" "${list}" || return 1
     done
 }
 
@@ -102,7 +102,13 @@ reBlockBuild() {
                 break
             fi
         done
-        (( rebuild )) && compiler "$numBlock" "$list" || echo "Block $numBlock is up-to-date"
+        if (( rebuild )); then
+            if ! compiler "$numBlock" "$list"; then
+                exit 1
+            fi
+        else 
+            echo "Block $numBlock is up-to-date"
+        fi
     done
 }
 
@@ -127,9 +133,8 @@ g() {
         [[ -f "build/temp/prev" ]] && cp build/temp/prev build/main && echo -e "\e[33mPrev version restored\e[0m" && ./build/main
         return 1
     fi
-    rm -rf build/temp
+   rm -rf build/temp
 }
-
 release() {
     mkdir -p build build/temp build/prev
 
