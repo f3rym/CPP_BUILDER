@@ -1,3 +1,11 @@
+
+# CONTRIBUTORS
+  1. ysnr
+  2. dirijable
+  3. cnacucoxpanu
+  4. golden knight
+  5. elena schekatovka
+  
 # 🛠️ Сборка проекта с помощью feBuild.sh
 
 # feBuild v2
